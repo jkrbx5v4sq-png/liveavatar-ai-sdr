@@ -69,11 +69,28 @@ NEXT_PUBLIC_USER_NAME=Demo User
 
 ## Using with Claude Code
 
-This project includes a Claude Code skill. To use it:
+### Quick Install (Recommended)
+
+Install the skill globally with one command:
+
+```bash
+npx skills add eNNNo/liveavatar-ai-sdr
+```
+
+Then in any Claude Code session:
+```
+/ai-sdr-agent shopify.com
+```
+
+Claude will prompt you for your LiveAvatar API key and set everything up automatically.
+
+### Manual Installation
+
+If you prefer to set it up manually:
 
 1. Open Claude Code in any project
 2. Run: `/ai-sdr-agent shopify.com`
-3. Claude will set up and run the app for you
+3. Claude will clone this repo, configure your API key, and run the app for you
 
 ## How It Works
 
