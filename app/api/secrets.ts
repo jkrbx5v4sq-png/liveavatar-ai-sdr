@@ -2,7 +2,7 @@
 // Values can be overridden via environment variables
 
 // API Key - REQUIRED: Set via LIVEAVATAR_API_KEY env var in .env.local
-// Get your API key from https://app.heygen.com/settings/api
+// Get your free API key from https://app.liveavatar.com/developers
 export const API_KEY = process.env.LIVEAVATAR_API_KEY || "";
 export const API_URL = "https://api.liveavatar.com";
 

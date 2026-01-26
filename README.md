@@ -16,7 +16,7 @@ Create an instant AI Sales Development Representative (SDR) for any website usin
 ### Prerequisites
 
 - Node.js 18+
-- HeyGen LiveAvatar API key ([Get one here](https://app.heygen.com/settings/api))
+- LiveAvatar API key ([Get your free key here](https://app.liveavatar.com/developers) - sign in with HeyGen account)
 
 ### Installation
 
