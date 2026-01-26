@@ -1,6 +1,7 @@
 ---
 name: ai-sdr-agent
 description: Create an instant AI SDR (Sales Development Representative) agent for any website using HeyGen LiveAvatar. Use this when the user wants to create an AI sales rep, AI SDR, or AI avatar that can talk about a specific website or business.
+user-invocable: true
 argument-hint: "[website-url]"
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
