@@ -10,12 +10,14 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 
 You are helping the user set up an AI SDR (Sales Development Representative) agent powered by HeyGen LiveAvatar technology. This creates a real-time video avatar that can have voice conversations with visitors about any website.
 
-## Required Information
+## Required Information (BOTH are required)
 
-1. **LiveAvatar API Key** - Get your free API key from https://app.liveavatar.com/developers (sign in with your HeyGen account)
-2. **Website URL** - The website the AI SDR should represent
+1. **LiveAvatar API Key** (REQUIRED) - Get your free API key from https://app.liveavatar.com/developers (sign in with your HeyGen account)
+2. **Website URL** (REQUIRED) - The website the AI SDR should represent. This is NOT optional - you must get both pieces of information from the user before proceeding.
 
 Parse any provided arguments: $ARGUMENTS
+
+**IMPORTANT**: Do not proceed with setup until you have BOTH the API key AND the website URL from the user. Ask for both if not provided.
 
 ## Setup Steps
 

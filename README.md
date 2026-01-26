@@ -71,11 +71,13 @@ NEXT_PUBLIC_USER_NAME=Demo User
 
 ### Quick Install (Recommended)
 
-Install the skill globally with one command:
+Install the skill with one command:
 
 ```bash
 npx skills add eNNNo/liveavatar-ai-sdr
 ```
+
+**Important**: After installing, restart Claude Code to load the new skill.
 
 Then in any Claude Code session:
 ```
