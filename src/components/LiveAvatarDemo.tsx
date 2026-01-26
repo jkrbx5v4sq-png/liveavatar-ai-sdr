@@ -217,7 +217,7 @@ export const LiveAvatarDemo = () => {
                 id="businessUrl"
                 value={businessUrl}
                 onChange={(e) => setBusinessUrl(e.target.value)}
-                placeholder="e.g., mycompany.com"
+                placeholder="e.g., liveavatar.com"
                 required
                 className="w-full bg-white/10 text-white placeholder-gray-500 px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 border border-white/10"
               />
