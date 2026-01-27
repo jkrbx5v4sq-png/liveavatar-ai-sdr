@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { LiveAvatarSession } from "./LiveAvatarSession";
 
 type SetupStep = "form" | "generating" | "session" | "ended";
@@ -39,10 +39,13 @@ export const LiveAvatarDemo = () => {
   const [userName, setUserName] = useState(AUTO_USER_NAME);
   const [businessUrl, setBusinessUrl] = useState(AUTO_WEBSITE_URL);
 
-  // Track context for embed code
+  // Track context info for end screen
   const [currentContextId, setCurrentContextId] = useState<string | null>(null);
   const [currentBusinessName, setCurrentBusinessName] = useState<string>("");
-  const [embedCopied, setEmbedCopied] = useState(false);
+  const [currentBusinessUrl, setCurrentBusinessUrl] = useState<string>("");
+
+  // Use ref to track if we should show end screen (avoids closure issues)
+  const hasEmbedRef = useRef(false);
 
   // Track if auto-start has been triggered
   const autoStartTriggered = useRef(false);
@@ -119,11 +122,16 @@ export const LiveAvatarDemo = () => {
         throw new Error(errorData.error || "Failed to generate context");
       }
 
-      const { contextId, businessName } = await contextRes.json();
+      const contextData = await contextRes.json();
+      console.log("Context response:", contextData);
+      const { contextId, businessName } = contextData;
 
-      // Store context info for embed code
+      // Store context info for end screen
       setCurrentContextId(contextId);
       setCurrentBusinessName(businessName);
+      setCurrentBusinessUrl(normalizedUrl);
+      // Always show end screen if we have a context
+      hasEmbedRef.current = !!contextId;
 
       setGenerationStatus({
         step: "Creating your AI representative",
@@ -169,28 +177,25 @@ export const LiveAvatarDemo = () => {
     await startSession();
   };
 
-  const onSessionStopped = () => {
+  const onSessionStopped = useCallback(() => {
+    console.log("Session stopped, hasEmbedRef:", hasEmbedRef.current);
     setSessionToken("");
-    // Show embed screen if we have a context, otherwise go back to form
-    if (currentContextId) {
+    // Show embed screen if we have context info, otherwise go back to form
+    if (hasEmbedRef.current) {
+      console.log("Showing embed screen");
       setSetupStep("ended");
     } else {
+      console.log("Going back to form (no context)");
       setSetupStep("form");
     }
-  };
+  }, []);
 
   const handleStartOver = () => {
     setCurrentContextId(null);
     setCurrentBusinessName("");
-    setEmbedCopied(false);
+    setCurrentBusinessUrl("");
+    hasEmbedRef.current = false;
     setSetupStep("form");
-  };
-
-  const handleCopyEmbed = () => {
-    const embedCode = `<iframe src="https://embed.liveavatar.com/v1/${currentContextId}" allow="microphone" title="LiveAvatar - ${currentBusinessName}" style="width: 100%; aspect-ratio: 16/9; border: none;"></iframe>`;
-    navigator.clipboard.writeText(embedCode);
-    setEmbedCopied(true);
-    setTimeout(() => setEmbedCopied(false), 2000);
   };
 
   // Form screen
@@ -345,13 +350,14 @@ export const LiveAvatarDemo = () => {
     );
   }
 
-  // Session ended screen with embed code
+  // Session ended screen with website mockup preview
   if (setupStep === "ended") {
-    const embedCode = `<iframe src="https://embed.liveavatar.com/v1/${currentContextId}" allow="microphone" title="LiveAvatar - ${currentBusinessName}" style="width: 100%; aspect-ratio: 16/9; border: none;"></iframe>`;
+    // Extract domain for display
+    const displayDomain = currentBusinessUrl ? new URL(currentBusinessUrl).hostname : currentBusinessName;
 
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center gap-6 p-4">
-        <div className="w-full max-w-2xl flex flex-col items-center gap-6">
+      <div className="w-full h-full flex flex-col items-center justify-center gap-6 p-4 overflow-y-auto">
+        <div className="w-full max-w-3xl flex flex-col items-center gap-6">
           {/* Success header */}
           <div className="text-center">
             <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -373,53 +379,88 @@ export const LiveAvatarDemo = () => {
               Your AI Sales Rep is Ready!
             </h1>
             <p className="text-gray-400">
-              Add this AI avatar to your website with the embed code below
+              Here&apos;s how your AI assistant could look on your website
             </p>
           </div>
 
-          {/* Embed preview */}
-          <div className="w-full bg-white/5 rounded-xl p-4 border border-white/10">
-            <div className="text-sm text-gray-400 mb-2">Preview</div>
-            <div className="aspect-video bg-black rounded-lg overflow-hidden">
-              <iframe
-                src={`https://embed.liveavatar.com/v1/${currentContextId}`}
-                allow="microphone"
-                title={`LiveAvatar - ${currentBusinessName}`}
-                className="w-full h-full border-none"
-              />
+          {/* Website mockup with avatar in corner */}
+          <div className="w-full bg-white/5 rounded-xl border border-white/10 overflow-hidden">
+            {/* Browser chrome mockup */}
+            <div className="bg-gray-800 px-4 py-2 flex items-center gap-2 border-b border-white/10">
+              <div className="flex gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-red-500/70"></div>
+                <div className="w-3 h-3 rounded-full bg-yellow-500/70"></div>
+                <div className="w-3 h-3 rounded-full bg-green-500/70"></div>
+              </div>
+              <div className="flex-1 flex justify-center">
+                <div className="bg-gray-700 rounded px-3 py-1 text-xs text-gray-400 flex items-center gap-2">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                  {displayDomain}
+                </div>
+              </div>
+            </div>
+
+            {/* Website content area with avatar */}
+            <div className="relative bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 h-64 md:h-80">
+              {/* Fake website content */}
+              <div className="p-6 space-y-4">
+                <div className="h-8 w-48 bg-white/10 rounded"></div>
+                <div className="space-y-2">
+                  <div className="h-4 w-full bg-white/5 rounded"></div>
+                  <div className="h-4 w-3/4 bg-white/5 rounded"></div>
+                  <div className="h-4 w-5/6 bg-white/5 rounded"></div>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <div className="h-10 w-32 bg-blue-600/30 rounded"></div>
+                  <div className="h-10 w-32 bg-white/10 rounded"></div>
+                </div>
+              </div>
+
+              {/* Avatar in bottom-right corner */}
+              <div className="absolute bottom-4 right-4 flex flex-col items-end gap-2">
+                {/* Chat bubble */}
+                <div className="bg-white rounded-lg px-3 py-2 text-sm text-gray-800 max-w-48 shadow-lg">
+                  Hi! I&apos;m your AI assistant for {currentBusinessName}. How can I help?
+                </div>
+                {/* Avatar circle */}
+                <div className="w-16 h-16 md:w-20 md:h-20 rounded-full overflow-hidden border-4 border-blue-500 shadow-lg shadow-blue-500/30 bg-gray-700">
+                  {selectedAvatar?.preview_url ? (
+                    <img
+                      src={selectedAvatar.preview_url}
+                      alt={selectedAvatar.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">
+                      {selectedAvatar?.name}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Embed code */}
-          <div className="w-full">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-gray-400">Embed Code</span>
-              <button
-                onClick={handleCopyEmbed}
-                className={`text-sm px-3 py-1 rounded transition-colors ${
-                  embedCopied
-                    ? "bg-green-500/20 text-green-400"
-                    : "bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
-                }`}
-              >
-                {embedCopied ? "Copied!" : "Copy Code"}
-              </button>
-            </div>
-            <div className="bg-gray-900 rounded-lg p-4 font-mono text-xs text-gray-300 overflow-x-auto">
-              <code>{embedCode}</code>
-            </div>
-          </div>
-
-          {/* Instructions */}
-          <div className="w-full bg-blue-500/10 rounded-lg p-4 border border-blue-500/20">
-            <h3 className="text-sm font-medium text-blue-400 mb-2">
-              How to add to your website:
+          {/* Next steps CTA */}
+          <div className="w-full bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-xl p-6 border border-blue-500/20">
+            <h3 className="text-lg font-semibold text-white mb-2">
+              Ready to add this to your website?
             </h3>
-            <ol className="text-sm text-gray-300 space-y-1 list-decimal list-inside">
-              <li>Copy the embed code above</li>
-              <li>Paste it into your website&apos;s HTML where you want the avatar to appear</li>
-              <li>The avatar will automatically start when visitors load the page</li>
-            </ol>
+            <p className="text-gray-300 text-sm mb-4">
+              Visit LiveAvatar to get your embed code and explore more customization options including different avatars, voices, and conversation styles.
+            </p>
+            <a
+              href="https://liveavatar.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+            >
+              Explore LiveAvatar
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
           </div>
 
           {/* Actions */}
@@ -432,7 +473,7 @@ export const LiveAvatarDemo = () => {
             </button>
             <button
               onClick={() => startSession()}
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              className="px-6 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
             >
               Chat Again
             </button>

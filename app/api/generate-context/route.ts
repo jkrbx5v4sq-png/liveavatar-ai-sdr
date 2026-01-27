@@ -1,6 +1,58 @@
 import { API_KEY, API_URL, AVATAR_ID, VOICE_ID } from "../secrets";
 
-// Simple function to extract text content from HTML
+// Use Jina AI Reader API for better content extraction (handles JavaScript-rendered sites)
+async function fetchWithJina(url: string, timeout = 10000): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    // Jina Reader API - converts any URL to clean markdown/text
+    const jinaUrl = `https://r.jina.ai/${url}`;
+    const res = await fetch(jinaUrl, {
+      headers: {
+        "Accept": "text/plain",
+      },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      return await res.text();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// Fallback: Simple HTML fetch for sites that block Jina
+async function fetchPageDirect(url: string, timeout = 5000): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const html = await res.text();
+      return extractTextFromHtml(html);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// Simple function to extract text content from HTML (fallback)
 function extractTextFromHtml(html: string): string {
   // Remove script and style tags and their content
   let text = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
@@ -8,6 +60,7 @@ function extractTextFromHtml(html: string): string {
   text = text.replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, "");
   text = text.replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, "");
   text = text.replace(/<header[^>]*>[\s\S]*?<\/header>/gi, "");
+  text = text.replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, "");
 
   // Remove all HTML tags
   text = text.replace(/<[^>]+>/g, " ");
@@ -26,90 +79,63 @@ function extractTextFromHtml(html: string): string {
   return text;
 }
 
-// Extract page title from HTML
-function extractTitle(html: string): string {
-  const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-  return titleMatch ? titleMatch[1].trim() : "";
-}
-
-// Extract meta description from HTML
-function extractMetaDescription(html: string): string {
-  const metaMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i);
-  if (metaMatch) return metaMatch[1].trim();
-
-  // Try og:description
-  const ogMatch = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i);
-  return ogMatch ? ogMatch[1].trim() : "";
-}
-
-// Fetch a single page with timeout
-async function fetchPage(url: string, timeout = 5000): Promise<string | null> {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; LiveAvatarBot/1.0)",
-      },
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (res.ok) {
-      return await res.text();
+// Extract title from Jina response (usually first line with #)
+function extractTitleFromJina(content: string): string {
+  const lines = content.split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("# ")) {
+      return trimmed.slice(2).trim();
     }
-    return null;
-  } catch {
-    return null;
+    if (trimmed.startsWith("Title:")) {
+      return trimmed.slice(6).trim();
+    }
   }
+  return "";
 }
 
-// Fetch multiple pages from a website to gather more context
+// Fetch website content using Jina AI Reader for better extraction
 async function fetchWebsiteContent(baseUrl: string): Promise<{ content: string; title: string; description: string }> {
-  // Common paths to check for additional content
-  const additionalPaths = [
-    "/about",
-    "/about-us",
-    "/products",
-    "/services",
-    "/features",
-    "/pricing",
-    "/solutions",
-  ];
+  console.log(`Fetching content from ${baseUrl} using Jina AI Reader...`);
 
-  const baseUrlObj = new URL(baseUrl);
-  const origin = baseUrlObj.origin;
+  // Try Jina Reader first (handles JS-rendered content)
+  let mainContent = await fetchWithJina(baseUrl);
 
-  // Fetch homepage first
-  const homepageHtml = await fetchPage(baseUrl);
-  if (!homepageHtml) {
+  // Fallback to direct fetch if Jina fails
+  if (!mainContent || mainContent.length < 200) {
+    console.log("Jina Reader returned insufficient content, trying direct fetch...");
+    mainContent = await fetchPageDirect(baseUrl);
+  }
+
+  if (!mainContent) {
     return { content: "", title: "", description: "" };
   }
 
-  const title = extractTitle(homepageHtml);
-  const description = extractMetaDescription(homepageHtml);
-  let allContent = `Homepage:\n${extractTextFromHtml(homepageHtml)}\n\n`;
+  const title = extractTitleFromJina(mainContent);
 
-  // Fetch additional pages in parallel (limit to 3 to avoid rate limiting)
-  const pagePromises = additionalPaths.slice(0, 3).map(async (path) => {
-    const pageUrl = `${origin}${path}`;
-    const html = await fetchPage(pageUrl, 3000);
-    if (html) {
-      const pageContent = extractTextFromHtml(html);
-      // Only include if we got meaningful content (at least 100 chars)
-      if (pageContent.length > 100) {
-        return `${path.replace("/", "").replace("-", " ")} page:\n${pageContent}\n\n`;
-      }
+  // Also try to fetch a products/about page for more context
+  const additionalPaths = ["/iphone", "/products", "/about", "/features"];
+  const baseUrlObj = new URL(baseUrl);
+  const origin = baseUrlObj.origin;
+
+  // Fetch one additional page that's likely to have product info
+  for (const path of additionalPaths) {
+    const additionalUrl = `${origin}${path}`;
+    const additionalContent = await fetchWithJina(additionalUrl);
+    if (additionalContent && additionalContent.length > 500) {
+      mainContent += `\n\n--- ${path} page ---\n${additionalContent}`;
+      console.log(`Added content from ${path} page (${additionalContent.length} chars)`);
+      break; // Only add one additional page to avoid too much content
     }
-    return "";
-  });
+  }
 
-  const additionalContents = await Promise.all(pagePromises);
-  allContent += additionalContents.filter(c => c).join("");
+  console.log(`Total content fetched: ${mainContent.length} chars`);
 
-  return { content: allContent, title, description };
+  return {
+    content: mainContent,
+    title,
+    description: "", // Jina doesn't separate description, it's in the content
+  };
 }
 
 // Extract business name from URL or content
@@ -142,8 +168,8 @@ function generateSalesPrompt(
   title: string,
   description: string
 ): string {
-  // Use more content - up to 6000 chars for richer context
-  const truncatedContent = websiteContent.slice(0, 6000);
+  // Use more content - up to 10000 chars for richer context
+  const truncatedContent = websiteContent.slice(0, 10000);
 
   return `You are a friendly and knowledgeable AI sales representative for ${businessName}. Your name is ${userName}'s AI Assistant.
 
@@ -159,7 +185,11 @@ Your role is to:
 - Help potential customers understand how ${businessName} can solve their problems
 - Guide interested visitors toward taking the next step (booking a demo, contacting sales, signing up, etc.)
 
-IMPORTANT: Base your answers ONLY on the information provided below. If asked about something not covered in the content below, say you'd be happy to connect them with someone who can help with that specific question.
+CRITICAL RULES - YOU MUST FOLLOW THESE:
+1. ONLY use information from the website content provided below. Do NOT use any prior knowledge about ${businessName}.
+2. If the content mentions specific product names, models, versions, or prices - use EXACTLY what is written, do not substitute with older information.
+3. If asked about something not in the provided content, say "I don't have that specific information, but I'd be happy to connect you with our team who can help."
+4. NEVER make up or guess product details, prices, features, or specifications not explicitly stated in the content below.
 
 Here is detailed information about ${businessName} from their website:
 
@@ -176,39 +206,8 @@ Communication style:
 Remember: You're having a real-time voice conversation, so keep your responses brief and conversational.`;
 }
 
-// Search for an existing context by business name
-async function findExistingContext(businessName: string): Promise<string | null> {
-  try {
-    // Fetch contexts and look for one that matches this business
-    const res = await fetch(`${API_URL}/v1/contexts?page=1&page_size=100`, {
-      headers: {
-        "X-API-KEY": API_KEY,
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (!res.ok) return null;
-
-    const data = await res.json();
-    const contexts = data.data?.results || [];
-
-    // Look for a context that starts with "{businessName} Sales Rep"
-    const searchPrefix = `${businessName} Sales Rep`;
-    const matching = contexts.find((ctx: { name: string; id: string }) =>
-      ctx.name.startsWith(searchPrefix)
-    );
-
-    if (matching) {
-      console.log(`Found existing context for ${businessName}: ${matching.id}`);
-      return matching.id;
-    }
-
-    return null;
-  } catch (error) {
-    console.error("Error searching for existing context:", error);
-    return null;
-  }
-}
+// NOTE: Context caching removed - each session creates a fresh context
+// This ensures content is always up-to-date from the website
 
 export async function POST(request: Request) {
   try {
@@ -241,24 +240,10 @@ export async function POST(request: Request) {
     const businessName = extractBusinessName(businessUrl, websiteContent);
     console.log(`Extracted business name: ${businessName}, content length: ${websiteContent.length} chars`);
 
-    // Step 2: Check if we already have a context for this business
-    const existingContextId = await findExistingContext(businessName);
-    if (existingContextId) {
-      console.log(`Reusing existing context for ${businessName}`);
-      return new Response(
-        JSON.stringify({
-          contextId: existingContextId,
-          businessName,
-          reused: true,
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    // Step 3: Generate the sales representative prompt
+    // Step 2: Generate the sales representative prompt
     const systemPrompt = generateSalesPrompt(userName, businessName, websiteContent, title, description);
 
-    // Step 4: Create context via LiveAvatar API
+    // Step 3: Create context via LiveAvatar API
     const timestamp = Date.now();
     const contextRes = await fetch(`${API_URL}/v1/contexts`, {
       method: "POST",
@@ -288,6 +273,7 @@ export async function POST(request: Request) {
 
     const contextData = await contextRes.json();
     const contextId = contextData.data?.context_id || contextData.data?.id;
+    console.log(`Created context with ID: ${contextId}`);
 
     return new Response(
       JSON.stringify({
